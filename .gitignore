@@ -1,0 +1,40 @@
+# Build output
+build/
+cmake-build-*/
+Debug/
+Release/
+*.o
+*.d
+*.elf
+*.map
+*.hex
+*.list
+*.su
+*.cyclo
+
+# STM32CubeIDE / Eclipse workspace state
+.metadata/
+.settings/
+*.launch.bak
+RemoteSystemsTempFiles/
+
+# KiCad
+*-backups/
+_autosave-*
+*.kicad_prl
+fp-info-cache
+*.bak
+*.lck
+
+# Host tests
+firmware/tests/bin/
+
+# Editors / OS
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+~$*
+*.swp
+__pycache__/

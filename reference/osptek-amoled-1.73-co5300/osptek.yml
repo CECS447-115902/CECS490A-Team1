@@ -1,0 +1,18 @@
+id: amoled-1.73-466x466-qspi-co5300
+category: displays
+
+size: "1.73"
+panel: amoled
+resolution: 466x466
+interface: [qspi]
+shape: round
+
+versions:
+  - id: AM173Q466466FLS
+    driver: CO5300
+    touch: CST820
+    note: none
+  - id: AM173Q466466FLS32
+    driver: CO5300
+    touch: CST820
+    note: 24-pin FPC
