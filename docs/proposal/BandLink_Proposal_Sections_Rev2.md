@@ -11,7 +11,7 @@ The project runs across two semesters. **490A is prototype-only:** the MVP is bu
 
 | Tier | Contents | Target |
 |---|---|---|
-| **MVP** | GNSS fix, SX1262 LoRa link, NFC tap-to-pair, AES-encrypted location packets, BNO085 9-DOF fusion bearing, round touch display (built into the STM32U5G9J-DK1), ERM haptic. Two portable units built from STM32U5G9J-DK1 boards and breakout modules, ≥500 m apart. | End of 490A |
+| **MVP** | GNSS fix, SX1262 LoRa link, NFC tap-to-pair, AES-encrypted location packets, BNO085 9-DOF fusion bearing, GC9A01 round TFT, ERM haptic. Two portable units built from NUCLEO-U5A5ZJ-Q boards and breakout modules, ≥500 m apart; LVGL UI developed on an STM32U5G9J-DK1. | End of 490A |
 | **Stretch 1** | Custom PCB (Rev A), 466×466 AMOLED with LVGL UI, PEC06 rotary crown, DRV2605L + LRA haptics, fuel gauge, magnetic pogo charging, 3D-printed enclosure. | 490B |
 | **Stretch 2** | DW3000 UWB close-range ranging (distance only), multi-hop LoRa relay. | 490B, if time allows |
 
@@ -54,7 +54,12 @@ Each bracelet computes its own GNSS position and broadcasts it in an encrypted L
                                                    └────────────────────┘
 ```
 
-The 490A MVP uses the same topology on **STM32U5G9J-DK1** Discovery kits, which carry the same STM32U5G9 MCU as the final PCB (BGA-216 package instead of LQFP-100). Breakout modules connect through the DK1's two 2.54 mm expansion connectors: LoRa on SPI, GNSS on a UART, BNO085 / NFC / haptics on I2C, and the ERM motor on a GPIO. The DK1's built-in 2.47" 480×480 round touch TFT (MIPI-DSI) stands in for the AMOLED. The DK1's I/O runs at 1.8 V, so every 3.3 V breakout connects through level shifters. The custom PCB moves the BNO085 to SPI and the display to the QSPI AMOLED.
+The 490A MVP uses the same topology on dev boards, split by job:
+
+- **Portable units: NUCLEO-U5A5ZJ-Q (×3: two units + one spare / third test node).** Same STM32U5 family and HAL as the final MCU, 3.3 V I/O, Arduino + Morpho headers. Breakouts wire in directly: LoRa on SPI, GNSS on a UART, BNO085 / NFC / haptics on I2C, a GC9A01 round TFT on SPI for the arrow, and the ERM motor on a GPIO.
+- **UI board: STM32U5G9J-DK1 (×1).** The exact final MCU (STM32U5G9) with its 2.47" 480×480 round touch TFT, for LVGL screens and NeoChrom GPU work. Its I/O runs at 1.8 V, so breakouts are not wired to it.
+
+Drivers and services move from the Nucleo to the U5G9 by regenerating the CubeMX project and updating the board pin map. The custom PCB moves the BNO085 to SPI and the display to the QSPI AMOLED.
 
 ### 2.3 Interface table
 
@@ -101,7 +106,7 @@ The MCU is the **STM32U5G9VJT6Q** (Cortex-M33, 160 MHz, 4 MB flash, ~3 MB SRAM, 
 | Matching Discovery kit | STM32U5G9J-DK1 (active) | STM32U5A9J-DK (not recommended for new designs) | Waveshare AMOLED boards |
 | Unit price (qty 1) | ~$21 | ~$16 | ~$3–4 module |
 
-We chose the U5G9 over the U5A9 because it is the MCU on the STM32U5G9J-DK1, which we use for all 490A prototypes, so code brought up on the kits runs unchanged on the custom PCB. It also retains more SRAM in Stop 2 at lower current, and adds a vector-graphics GPU and graphics timer that suit the round AMOLED. We chose the STM32U5 family over the ESP32-S3 because BandLink's radios (LoRa, NFC, UWB) are all external, so the ESP32's Wi-Fi/BLE adds no value, while its RTOS-based SDK conflicts with our bare-metal design and its sleep current is roughly ten times higher. The U5 also provides independent SPI buses for the LoRa, UWB and IMU, plus a separate OCTOSPI for the display.
+We chose the U5G9 over the U5A9 because it is the MCU on the STM32U5G9J-DK1 we use for UI development, so UI and GPU code brought up on the kit runs unchanged on the custom PCB. The portable 490A units use the NUCLEO-U5A5ZJ-Q (same family and HAL, 3.3 V I/O, lower cost). It also retains more SRAM in Stop 2 at lower current, and adds a vector-graphics GPU and graphics timer that suit the round AMOLED. We chose the STM32U5 family over the ESP32-S3 because BandLink's radios (LoRa, NFC, UWB) are all external, so the ESP32's Wi-Fi/BLE adds no value, while its RTOS-based SDK conflicts with our bare-metal design and its sleep current is roughly ten times higher. The U5 also provides independent SPI buses for the LoRa, UWB and IMU, plus a separate OCTOSPI for the display.
 
 ### 2.6 LoRa link parameters
 
@@ -136,13 +141,13 @@ SF9 / 125 kHz / CR 4/5, 8-symbol preamble, 24-byte payload (ID, sequence, lat/lo
 | K-02 | Body and wrist detune the GNSS, LoRa, and NFC antennas | High | Medium | Prototype antennas on-wrist early, include tuning pads in the matching network, put a ferrite sheet under the NFC coil |
 | K-03 | Battery life misses the 8 h target | Medium | High | Budget shows 8.4 h margin. Levers: GNSS power-save mode, TDMA receive slots, AMOLED timeout, BNO085 report rate. Validate with PPK2 in 490A |
 | K-04 | Peak current browns out the cell or regulator | Medium | High | TPS63802 buck-boost, bulk capacitance on the 3.3 V rail, firmware load interlocks, confirm the cell's C-rating |
-| K-05 | AMOLED needs a supply the PCB doesn't provide, or the driver IC differs from the listing | Medium | Medium | The 490A MVP uses the DK1's built-in round TFT, so the AMOLED is off the 490A critical path. Buy the panel early in 490B, confirm driver IC, supply voltage and enable pin, and design the PCB supply to match |
+| K-05 | AMOLED needs a supply the PCB doesn't provide, or the driver IC differs from the listing | Medium | Medium | The 490A MVP uses a GC9A01 round TFT on the Nucleo units and the DK1's built-in round TFT for UI work, so the AMOLED is off the 490A critical path. Buy the panel early in 490B, confirm driver IC, supply voltage and enable pin, and design the PCB supply to match |
 | K-06 | LoRa range below 500 m at wrist height | Medium | High | Step SF up to 10–11 (re-check dwell), use 22 dBm output, raise the antenna; the relay (S2) adds range |
 | K-07 | BNO085 magnetometer interference from the LRA, battery, or display, or I2C issues with the dev breakout | Medium | Medium | Place it far from the LRA, run the sensor's calibration and save it (DCD), gate heading on the reported accuracy status. Use SPI on the custom PCB. During dev, keep the BNO085 alone on its I2C bus with no multiplexer |
 | K-08 | Part lead times or lifecycle (DWM3000 37 wk factory, PN7150 successor drops P2P, U5A9 Discovery board not recommended for new designs, addressed by moving to the U5G9) | Medium | Medium | Buy from distributor stock now. Fall back to NFC card-emulation pairing if moving to PN7160. Use the STM32U5G9J-DK1 for UI development |
 | K-09 | Four-person team spreads too thin across subsystems | Medium | High | Each subsystem has a single owner. Tier gates: no Stretch 1 work until the MVP demo passes; no Stretch 2 work until Stretch 1 is done |
 | K-10 | RF regulatory compliance | Low | Medium | 915 MHz under FCC Part 15.247 with ≤0.4 s dwell; hop channels; test-only use of non-certified modules |
-| K-11 | DK1 I/O is 1.8 V; 3.3 V breakouts can be damaged or fail to read logic levels | High | Medium | Level shifters on every breakout: bidirectional I2C shifters for I2C, a TXS0108E-class shifter for SPI and control lines. Confirm connector voltages in the DK1 user manual and probe each line before connecting a module |
+| K-11 | Code written on the U5A5 Nucleo behaves differently on the U5G9 (pin mapping, memory map, missing GPU on the U5A5) | Medium | Medium | Keep chip code in drivers/ and pins in the board file; regenerate CubeMX for the U5G9 and rerun each driver's smoke test on the DK1 before 490B PCB bring-up. GPU-dependent UI work happens only on the DK1 |
 
 ---
 
@@ -152,12 +157,12 @@ SF9 / 125 kHz / CR 4/5, 8-symbol preamble, 24-byte payload (ID, sequence, lat/lo
 
 | Category | Per unit | Qty | Total |
 |---|---|---|---|
-| Dev prototype set, MVP parts (490A) | $250.50 | 3 (2 units + 1 spare / 3-board tests) | $752 |
+| Dev prototype set, MVP parts (490A) | $197.50 | 3 (2 units + 1 spare / 3-board tests) | $593 |
 | Dev stretch add-ons (490B, before PCB) | $83 | 2 | $166 |
 | Custom PCB bracelet (490B) | $171.25 | 3 (2 + spare) | $514 |
-| Team tools (one-time) | — | 1 | $151 |
-| **Project total** | | | **≈ $1,583** |
-| MVP-only spend (3 MVP sets + PPK2) | | | ≈ $851 |
+| Team tools (DK1, PPK2, STLINK-V3MINIE, TC2030) | — | 1 | $241 |
+| **Project total** | | | **≈ $1,514** |
+| MVP-only spend (3 MVP sets + DK1 + PPK2) | | | ≈ $782 |
 
 Most line items are still estimates. Verify prices at DigiKey/Mouser before ordering.
 
@@ -178,13 +183,46 @@ Most line items are still estimates. Verify prices at DigiKey/Mouser before orde
 | Charging | BQ25180, MAX17048, 4-pin magnetic pogo connector | S1 | 8.50 |
 | UWB | Qorvo DWM3000 | S2 | 23 |
 
-### 5.3 Dev prototype set (per unit, 490A)
+### 5.3 490A prototype order
 
-STM32U5G9J-DK1 Discovery kit (~$90; on-board ST-LINK/V3 and 2.47" round touch TFT), level shifters (2× 4-channel I2C, 1× TXS0108E 8-channel, ~$13), SparkFun MAX-M10S breakout, SX1262 915 MHz breakout, MIKROE NFC 2 Click (PN7150), Adafruit BNO085 9-DOF breakout (#4754, $29.50), ERM motor, USB power bank. Stretch add-ons (two units, early 490B): AMOLED module, DRV2605L + LRA, PEC06, MAX17048 breakout, DWM3000EVB.
+Prices are approximate (USD, qty 1–10). Items marked * come from distributor listings; the rest are estimates to confirm before ordering.
 
-### 5.4 Team tools
+**Per portable unit: order 3 (2 units + 1 spare / third test node)**
 
-Nordic PPK2 power profiler (490A). STLINK-V3MINIE and Tag-Connect TC2030 cable for the custom PCB (490B). The DK1s have on-board ST-LINKs, so no separate debugger is needed in 490A.
+| # | Part | Purpose | Connects via | ~Unit $ | Total for 3 |
+|---|---|---|---|---|---|
+| 1 | NUCLEO-U5A5ZJ-Q | MCU board (STM32U5, 3.3 V, on-board ST-LINK) | USB | $39.53* | $119 |
+| 2 | SparkFun GNSS Breakout MAX-M10S (GPS-18037) | GPS position | UART + PPS pin | $45 | $135 |
+| 3 | SX1262 915 MHz breakout + 915 MHz antenna (e.g. Waveshare Core1262-HF) | LoRa radio | SPI + BUSY, DIO1, RESET | $20 | $60 |
+| 4 | MIKROE NFC 2 Click (PN7150) | NFC tap-to-pair | I2C + IRQ, VEN | $35* | $105 |
+| 5 | Adafruit BNO085 9-DOF IMU (#4754) | Heading for the arrow | I2C (STEMMA QT) + INT, RST | $29.50* | $89 |
+| 6 | GC9A01 1.28" round TFT 240×240 | Arrow + distance display | SPI + DC, RST, backlight | $10 | $30 |
+| 7 | Coin ERM vibration motor + 2N7002 MOSFET + flyback diode | Haptic alert | 1 GPIO | $3 | $9 |
+| 8 | USB power bank (small) | Powers the unit for the 500 m walk test | USB | $15 | $45 |
+| | **Per unit** | | | **~$197.50** | **~$593** |
+
+**Team items: order 1 each**
+
+| # | Part | Purpose | ~$ |
+|---|---|---|---|
+| 9 | STM32U5G9J-DK1 Discovery kit | Same MCU as the final PCB; LVGL/GPU UI work on its 2.47" round touch TFT | $90* |
+| 10 | Nordic PPK2 power profiler | Current measurements for R-03 and the power budget | $99 |
+| | **Team items** | | **~$189** |
+
+**490A order total: about $782.**
+
+**Small parts, if the team doesn't already have them (~$20–30 total):** jumper wires (M-F, F-F), Qwiic/STEMMA QT cables for the BNO085, a half-size breadboard or perfboard + standoffs per unit so it can be carried, spare headers.
+
+**Check before ordering:**
+- **GNSS antenna:** confirm the MAX-M10S breakout has an on-board antenna. If it only has a u.FL connector, add a small passive or active L1 antenna (~$10 each).
+- **LoRa frequency:** every SX1262 board and antenna must be the **915 MHz** (US) version, not 868 MHz.
+- **NFC Click board:** SparkFun has retired its listing; order from MIKROE or another distributor.
+
+### 5.4 490B items
+
+**Stretch add-ons for 2 units, early 490B (~$83 per unit, ~$166):** AMOLED module, DRV2605L + LRA, PEC06 encoder, MAX17048 fuel-gauge breakout, DWM3000EVB.
+
+**Custom PCB tools (~$52):** STLINK-V3MINIE and Tag-Connect TC2030 cable. The Nucleo and DK1 boards have on-board ST-LINKs, so no separate debugger is needed in 490A.
 
 ---
 
@@ -194,8 +232,8 @@ Nordic PPK2 power profiler (490A). STLINK-V3MINIE and Tag-Connect TC2030 cable f
 
 | Weeks | Work | Hub cards |
 |---|---|---|
-| 10/28–11/03 | MCU decision recorded (STM32U5, DK1 prototypes), 3× DK1 + level shifters + MVP parts ordered, STM32 toolchain set up (CubeMX, blink + UART on DK1), IMU smoke test | MISC-004, HW-04, SW-000 |
-| 11/04–11/10 | Each chip brought up alone through level shifters: LoRa point-to-point, GNSS fix; DK1 expansion-connector pin map; LVGL running on the DK1 display | SW-001, SW-002, HW-05 |
+| 10/28–11/03 | MCU decision recorded (STM32U5: Nucleo-U5A5 units + one DK1 for UI), 3× Nucleo + 1× DK1 + MVP parts ordered, STM32 toolchain set up (CubeMX, blink + UART on Nucleo and DK1), IMU smoke test | MISC-004, HW-04, SW-000 |
+| 11/04–11/10 | Each chip brought up alone on the Nucleo: LoRa point-to-point, GNSS fix; Nucleo prototype pin map; LVGL running on the DK1 display | SW-001, SW-002, HW-05 |
 | 11/11–11/17 | NFC tap-to-pair, AES-CCM packet encryption, GNSS → LoRa end to end | SW-003, SW-004 |
 | 11/18–11/24 | Bearing arrow on display, 500 m walk test, PPK2 power measurement | SW-005, TEST-001, TEST-002 |
 | 11/25–12/01 | Buffer (Thanksgiving week): fixes, retests, proposal updates | DOC-03 |
