@@ -10,20 +10,23 @@ A wrist-worn group locator for crowded events where cell networks fail. Each bra
 | Path | What lives there |
 |---|---|
 | `docs/proposal/` | Proposal drafts and revisions |
-| `docs/architecture/` | Firmware architecture diagrams and design notes |
+| `docs/architecture/` | Firmware and system architecture diagrams and design notes |
 | `docs/budget/` | BOM + power budget spreadsheet |
 | `docs/meetings/` | Weekly meeting notes (`YYYY-MM-DD.md`, copy `_template.md`) |
+| `docs/ui/` | UI sketches and screen designs |
 | `docs/reports/` | Milestone reports, final report, presentation decks |
 | `hardware/schematic/` | Interconnect schematic exports (PDF/SVG) |
 | `hardware/pcb/` | KiCad project for the custom bracelet PCB |
 | `hardware/bom/` | Exported BOMs for ordering (CSV from KiCad) |
 | `hardware/datasheets/` | Datasheets, one folder per subsystem |
-| `firmware/bandlink/` | STM32U5 firmware (bare-metal, LVGL 9) |
-| `firmware/tests/` | Host-side unit tests (run on a PC, no hardware) |
+| `firmware/bandlink/` | STM32U5 firmware (FreeRTOS, LVGL 9) |
+| `firmware/tests/` | Host-side unit tests (planned; run on a PC, no hardware) |
 | `firmware/tools/` | Scripts: flashing, log capture, packet decoding |
 | `reference/` | Third-party example code kept for reference only. Not built. |
 
 ## Firmware layout
+
+The bracelet firmware will run on **FreeRTOS** (X-CUBE-FREERTOS via CubeMX): 7 prioritized tasks, ISRs that only notify tasks, and tickless idle into Stop 2. See `firmware/bandlink/core/README.md` for the planned rules.
 
 `firmware/bandlink/` mirrors the layers in `docs/architecture/`:
 
@@ -31,7 +34,7 @@ A wrist-worn group locator for crowded events where cell networks fail. Each bra
 app/         screens' logic, mode controller (Standby / Typical / Finding)
 ui/          LVGL screens + port (display flush, encoder/touch input, tick)
 services/    link layer, crypto, navigation, pairing, ranging, battery, haptics
-core/        bare-metal scheduler: event flags, main loop, soft timers, power, store
+core/        FreeRTOS glue: task table, priorities, UI queue, bus mutexes, ISR pattern
 drivers/     one folder per chip: sx1262, max_m10s, pn7150, bno085, co5300, ...
 bsp/         per-board pin maps + CubeMX projects (nucleo_u5a5, bandlink_rev_a)
 third_party/ LVGL, vendor driver libraries (git submodules)
@@ -39,11 +42,15 @@ third_party/ LVGL, vendor driver libraries (git submodules)
 
 **Dependency rule:** `app/` and `services/` never include a HAL or CubeMX header. Hardware is reached through `drivers/` and `bsp/` interfaces, so the same service code builds for the Nucleo, the custom PCB, and the host test build.
 
+## Status
+
+System architecture is still being designed. The firmware folders and READMEs describe the planned structure; no firmware code is written yet.
+
 ## Getting started
 
 1. Clone with submodules: `git clone --recurse-submodules <repo-url>`
 2. Firmware toolchain: STM32CubeIDE or STM32CubeMX + CMake + Arm GNU Toolchain
-3. Host tests: `cd firmware/tests && make test` (needs `gcc` and `make`)
+3. Host tests: added once services exist (see `firmware/tests/README.md`)
 
 ## Workflow
 

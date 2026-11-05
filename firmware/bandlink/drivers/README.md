@@ -18,6 +18,6 @@ drivers/
 ```
 
 Rules:
-- No blocking waits. Multi-step operations are state machines advanced from the module's `*_process()`.
+- Drivers may block, but only on FreeRTOS primitives (task notification, semaphore, `vTaskDelay`), never on a busy-wait loop.
 - Bus access goes through the `bsp/` bus functions, never directly through HAL handles, so the driver builds for both boards.
 - Each driver has `<chip>.h` (public API) and `<chip>.c`. Keep vendor code in `third_party/`, unmodified where possible.

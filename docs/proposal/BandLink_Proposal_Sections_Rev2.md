@@ -17,6 +17,34 @@ The project runs across two semesters. **490A is prototype-only:** the MVP is bu
 
 **Out of scope:** heart rate / SpO2, speaker or voice, Qi wireless charging, offline maps, voice over LoRa.
 
+### 1.1 Optional features (candidates)
+
+These are not committed scope. Each one is considered only after the current tier is complete, using the process below.
+
+| ID | Feature | What it does | New hardware? | Effort | Earliest tier | Decide by |
+|---|---|---|---|---|---|---|
+| OPT-01 | SOS alert | Long-press the crown to broadcast an alert + location to the whole group; receivers vibrate and show an arrow to the sender | No | Low | Stretch 1 | 490B week 13 |
+| OPT-02 | Quick messages | Preset short texts sent over LoRa ("Meet at stage," "Leaving," "Need help"), shown on the group screen | No | Low–medium | Stretch 1 | 490B week 13 |
+| OPT-03 | Meet-up point | Drop a GPS pin and share it; every bracelet gets an arrow and distance to it | No | Low | Stretch 1 | 490B week 13 |
+| OPT-04 | Drift alert | Vibrate when a paired friend moves past a set distance | No | Low | Stretch 1 | 490B week 13 |
+| OPT-05 | Breadcrumb trail | Keep a friend's last known positions when they go out of range and point to the most recent one | No | Medium | Stretch 1 | 490B week 13 |
+| OPT-06 | Fall / impact detection | Use BNO085 motion reports to detect a hard fall and offer to send an SOS | No | Medium | Stretch 2 | 490B week 13 |
+| OPT-07 | Phone companion app | BLE link to a phone for a map view and group setup | **Yes**, BLE chip (e.g. nRF52-series) | High | Stretch 2 | **Before the Rev A schematic is ordered (490B week 3–4)** |
+| OPT-08 | Auto-brightness | Ambient light sensor adjusts AMOLED brightness to save power | **Yes**, small I2C light sensor | Low | Stretch 1 | **Before the Rev A schematic is ordered (490B week 3–4)** |
+
+**Adoption process:** a new idea goes on the hub Backlog as an `IDEA-` card. At the weekly meeting the team checks four things:
+1. Is the current tier done?
+2. Does the idea need hardware?
+3. Does it fit the power budget and schedule?
+4. Does it put any requirement (R-01 to R-10) at risk?
+
+If adopted, it becomes a normal card with an owner, done-when and due date, and the decision is logged in `docs/decisions.md`.
+
+**Design provisions that keep these options open:**
+- **LoRa packet:** a message-type field (see 2.6), so OPT-01 to OPT-05 can add new packet types without breaking compatibility.
+- **MCU headroom:** spare SRAM, flash and pins on the U5G9.
+- **Rev A PCB:** a small expansion header (spare GPIO, I2C, SPI), test pads on unused MCU pins, and unpopulated footprints for a second button and an LED.
+
 ---
 
 ## 2. System Architecture
@@ -42,7 +70,7 @@ Each bracelet computes its own GNSS position and broadcasts it in an encrypted L
    │ PN7150 NFC    │◄──────────────►│   Cortex-M33 160 MHz      │◄────────►│ DWM3000 UWB (S2) │
    └───────────────┘                │   4 MB flash / 3 MB SRAM  │          └──────────────────┘
    ┌───────────────┐   SPI3         │   NeoChrom VG GPU, AES/PKA│  OCTOSPI ┌──────────────────┐
-   │ BNO085 9-DOF  │◄──────────────►│   Bare-metal loop + LVGL  │◄────────►│ 1.43" AMOLED (S1)│
+   │ BNO085 9-DOF  │◄──────────────►│   FreeRTOS + LVGL         │◄────────►│ 1.43" AMOLED (S1)│
    │ fusion IMU    │  + INT/RST/WAKE│                           │  + TE    └──────────────────┘
    └───────────────┘                │                           │   I2C2   ┌──────────────────┐
                                     │                           │◄────────►│ DRV2605L + LRA   │
@@ -78,19 +106,19 @@ Drivers and services move from the Nucleo to the U5G9 by regenerating the CubeMX
 
 ### 2.4 Firmware architecture
 
-Bare-metal, no RTOS. Interrupt handlers only set an event flag, timestamp, or start a DMA transfer. A single main loop checks the flags in fixed priority order and calls each module's `*_process()` function to completion, restarting from the top after each one. When no flags are pending, the core enters Stop 2 (WFI) and wakes on the next EXTI, LPTIM, or UART interrupt. Multi-step exchanges are non-blocking state machines.
+**FreeRTOS** (X-CUBE-FREERTOS pack in STM32CubeMX) with preemptive priority scheduling and **tickless idle**: the kernel tick runs from LPTIM1, and when every task is blocked the core enters Stop 2 and wakes on the next EXTI, LPTIM, or UART interrupt. Interrupt handlers do the minimum: they timestamp, start DMA, and wake the owning task with `vTaskNotifyGiveFromISR()`. Data moves between tasks through queues; each bus is owned by one task or guarded by a mutex.
 
-Main-loop modules, highest priority first:
+Tasks, highest priority first:
 
-1. **radio_process():** SX1262 TX/RX state machine on GPS-synced TDMA slots, AES-128-CCM encryption and authentication, relay queue (S2). The slot-timer ISR issues the SetTx command so transmit timing doesn't depend on the loop.
-2. **ranging_process() (S2):** DW3000 ranging state machine; responses use the DW3000's hardware delayed-TX.
-3. **gnss_process():** UBX parsing from USART2 DMA, peer position table, bearing and distance computation.
-4. **imu_process():** BNO085 SH-2/SHTP driver. Enables the rotation-vector report and converts the quaternion to heading. Saves the dynamic calibration (DCD) to the sensor's flash. Uses the significant-motion and tap reports for wrist-raise wake.
-5. **nfc_process():** PN7150 NCI state machine, NFC exchange of the group key and device ID.
-6. **ui_process():** `lv_timer_handler()` with LVGL ticked from LPTIM1; the flush callback starts DMA, and the DMA-complete ISR calls `lv_display_flush_ready()`.
-7. **system_process():** battery service, watchdog kick, log flush, and the power manager, which enforces load interlocks (e.g., no NFC field while LoRa TX or UWB is active).
+1. **radio:** SX1262 TX/RX on GPS-synced TDMA slots, AES-128-CCM encryption and authentication, relay queue (S2). The slot-timer ISR issues the SetTx command so transmit timing never waits on the scheduler.
+2. **ranging (S2):** DW3000 ranging; responses use the DW3000's hardware delayed-TX.
+3. **position:** UBX parsing from USART2 DMA, peer position table, bearing and distance computation.
+4. **sensor:** BNO085 SH-2/SHTP driver. Enables the rotation-vector report and converts the quaternion to heading. Saves the dynamic calibration (DCD) to the sensor's flash. Uses the significant-motion and tap reports for wrist-raise wake.
+5. **pairing:** PN7150 NCI host, NFC exchange of the group key and device ID.
+6. **ui:** the only task that calls LVGL. Runs `lv_timer_handler()`, receives display updates from services through a queue; the flush callback starts DMA, and the DMA-complete ISR calls `lv_display_flush_ready()`.
+7. **system:** battery service, watchdog kick, log flush, and the power manager, which enforces load interlocks (e.g., no NFC field while LoRa TX or UWB is active).
 
-Each module has a worst-case run budget (radio and ranging under 2 ms, UI under 5 ms), verified with a GPIO toggle on a scope.
+Stack sizes start at 2–6 KB per task (about 20 KB total) and are checked with `uxTaskGetStackHighWaterMark()`; stack-overflow checking and `configASSERT` stay enabled in debug builds. CubeMX is set to use a timer other than SysTick (e.g. TIM6) for the HAL timebase, as FreeRTOS requires.
 
 ### 2.5 MCU selection
 
@@ -102,15 +130,15 @@ The MCU is the **STM32U5G9VJT6Q** (Cortex-M33, 160 MHz, 4 MB flash, ~3 MB SRAM, 
 | Stop 2, all SRAM retained | 15.5 µA | 17.5 µA | ~0.2–0.25 mA light sleep |
 | Graphics | NeoChrom VG GPU, DMA2D, JPEG, GFXTIM | NeoChrom GPU, DMA2D | None (software) |
 | SPI buses | SPI1–3 + 2× OCTOSPI + HSPI | SPI1–3 + OCTOSPI + HSPI | 2 general-purpose |
-| Bare-metal firmware | Standard (CubeU5) | Standard (CubeU5) | SDK built on FreeRTOS |
+| FreeRTOS support | X-CUBE-FREERTOS in CubeMX | X-CUBE-FREERTOS in CubeMX | Built into ESP-IDF |
 | Matching Discovery kit | STM32U5G9J-DK1 (active) | STM32U5A9J-DK (not recommended for new designs) | Waveshare AMOLED boards |
 | Unit price (qty 1) | ~$21 | ~$16 | ~$3–4 module |
 
-We chose the U5G9 over the U5A9 because it is the MCU on the STM32U5G9J-DK1 we use for UI development, so UI and GPU code brought up on the kit runs unchanged on the custom PCB. The portable 490A units use the NUCLEO-U5A5ZJ-Q (same family and HAL, 3.3 V I/O, lower cost). It also retains more SRAM in Stop 2 at lower current, and adds a vector-graphics GPU and graphics timer that suit the round AMOLED. We chose the STM32U5 family over the ESP32-S3 because BandLink's radios (LoRa, NFC, UWB) are all external, so the ESP32's Wi-Fi/BLE adds no value, while its RTOS-based SDK conflicts with our bare-metal design and its sleep current is roughly ten times higher. The U5 also provides independent SPI buses for the LoRa, UWB and IMU, plus a separate OCTOSPI for the display.
+We chose the U5G9 over the U5A9 because it is the MCU on the STM32U5G9J-DK1 we use for UI development, so UI and GPU code brought up on the kit runs unchanged on the custom PCB. The portable 490A units use the NUCLEO-U5A5ZJ-Q (same family and HAL, 3.3 V I/O, lower cost). It also retains more SRAM in Stop 2 at lower current, and adds a vector-graphics GPU and graphics timer that suit the round AMOLED. We chose the STM32U5 family over the ESP32-S3 because BandLink's radios (LoRa, NFC, UWB) are all external, so the ESP32's Wi-Fi/BLE adds no value while costing pins and power, and its sleep current is roughly ten times higher. The U5 also provides independent SPI buses for the LoRa, UWB and IMU, plus a separate OCTOSPI for the display.
 
 ### 2.6 LoRa link parameters
 
-SF9 / 125 kHz / CR 4/5, 8-symbol preamble, 24-byte payload (ID, sequence, lat/lon, altitude, time, flags, 4-byte MIC). Time on air is **0.206 s per packet**, under the FCC 15.247 limit of 0.4 s dwell per channel. Packet interval is 10 s in standby, 5 s at a typical event, and 2 s in finding mode.
+SF9 / 125 kHz / CR 4/5, 8-symbol preamble, 24-byte payload (ID, sequence, lat/lon, altitude, time, flags, 4-byte MIC). One flags byte carries a **message type** (position, SOS, quick message, meet-up point, relayed), so optional features in 1.1 reuse the same encrypted packet format. Time on air is **0.206 s per packet**, under the FCC 15.247 limit of 0.4 s dwell per channel. Packet interval is 10 s in standby, 5 s at a typical event, and 2 s in finding mode.
 
 ---
 
@@ -148,6 +176,7 @@ SF9 / 125 kHz / CR 4/5, 8-symbol preamble, 24-byte payload (ID, sequence, lat/lo
 | K-09 | Four-person team spreads too thin across subsystems | Medium | High | Each subsystem has a single owner. Tier gates: no Stretch 1 work until the MVP demo passes; no Stretch 2 work until Stretch 1 is done |
 | K-10 | RF regulatory compliance | Low | Medium | 915 MHz under FCC Part 15.247 with ≤0.4 s dwell; hop channels; test-only use of non-certified modules |
 | K-11 | Code written on the U5A5 Nucleo behaves differently on the U5G9 (pin mapping, memory map, missing GPU on the U5A5) | Medium | Medium | Keep chip code in drivers/ and pins in the board file; regenerate CubeMX for the U5G9 and rerun each driver's smoke test on the DK1 before 490B PCB bring-up. GPU-dependent UI work happens only on the DK1 |
+| K-12 | RTOS concurrency bugs: races on shared buses, priority inversion, stack overflow, LVGL called from the wrong task | Medium | Medium | One owning task per bus or a mutex (priority inheritance); only `...FromISR()` APIs in interrupts; LVGL called only from the ui task; stack-overflow checking, `configASSERT` and stack high-water checks in debug builds; FreeRTOS-aware debugging in CubeIDE |
 
 ---
 

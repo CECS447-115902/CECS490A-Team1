@@ -12,4 +12,4 @@ Hardware-independent logic. Must build on the host (see `firmware/tests/`).
 | `battery/` | SOC, charge state, low-battery mode |
 | `haptics/` | Named vibration patterns |
 
-Never include a HAL, CubeMX, or `bsp/` board header here.
+Never include a HAL, CubeMX, `bsp/` board header, or FreeRTOS header here. Task bodies call into services, so services stay host-testable.

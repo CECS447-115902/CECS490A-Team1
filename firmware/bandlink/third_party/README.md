@@ -10,7 +10,7 @@ External code, added as git submodules where a repository exists. Don't edit in 
 | Qorvo DW3000 API (S2) | `drivers/dw3000` | Qorvo DW3000 SDK download |
 | NXP PN7150 NCI examples | `drivers/pn7150` | NXP PN7150 MCU software package |
 
-STM32CubeU5 HAL comes in through CubeMX code generation in `bsp/<board>/cubemx/`.
+STM32CubeU5 HAL and FreeRTOS (X-CUBE-FREERTOS pack) come in through CubeMX code generation in `bsp/<board>/cubemx/`.
 
 Example:
 ```

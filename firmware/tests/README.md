@@ -1,9 +1,7 @@
 # tests/
 
-Host-side unit tests. They compile `core/` and `services/` with your PC's compiler and the stubs in `stubs/`, so logic can be tested before hardware arrives.
+Host-side unit tests. They compile `services/` with your PC's compiler, with no HAL and no FreeRTOS, so logic can be tested before hardware arrives.
 
-```
-make test
-```
+Planned; no tests yet. They will run with `make test` once services exist.
 
-Add a `test_<module>.c` per service (codec, crypto, nav math) and a target in the `Makefile`.
+Keep services free of FreeRTOS and HAL calls so they stay testable here: the task bodies call into services, not the other way round. Add a `test_<module>.c` per service (packet codec, crypto, nav math) and a target in the `Makefile`.
